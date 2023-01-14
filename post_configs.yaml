@@ -1,0 +1,80 @@
+- name: Set Timezone to Asia/Tehran
+  timezone:
+    name: Asia/Tehran
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  tags:
+  - set_hostname
+
+- name: Create user-1 & user-2 group
+  group:
+    name: '{{ item.name }}'
+  with_items:
+  - {name: user-1}
+  - {name: user-2}
+
+- name: Create users RedHat Based
+  user:
+    name: '{{ item.name }}'
+    password: '{{ item.password }}'
+    groups: '{{ item.group }}'
+    update_password: always
+  with_items:
+  - {name: 'user-1', password: "{{ user-1_pass | password_hash('sha512') }}", group: 'user-1,wheel'}
+  - {name: 'user-2', password: "{{ user-2_pass | password_hash('sha512') }}", group: 'user-2,wheel'}
+  when: ansible_os_family == "RedHat"
+
+- name: Create user Debian Based
+  user:
+    name: '{{ item.name }}'
+    password: '{{ item.password }}'
+    groups: '{{ item.group }}'
+    update_password: always
+  with_items:
+  - {name: 'user-1', password: "{{ user-1_pass | password_hash('sha512') }}", group: 'user-1,root,sudo'}
+  - {name: 'user-2', password: "{{ user-2_pass | password_hash('sha512') }}", group: 'user-2,root,sudo'}
+  when: ansible_os_family == "Debian"
+
+- name: lock install's user password
+  user:
+    name: install
+    password_lock: yes
+
+- name: Copy resolv.conf file
+  copy:
+    src: files/resolv.conf
+    dest: /etc/resolv.conf
+    backup: yes
+
+- name: Copy all sudoer files
+  copy:
+    src: '{{ item.src }}'
+    dest: '{{ item.dst }}'
+    validate: visudo -cf %s
+  with_items:
+    - {src: "files/user-1_sudoers", dst: '/etc/sudoers.d/user-1'}
+    - {src: "files/user-2_sudoers", dst: '/etc/sudoers.d/user-2'}
+
+
+- name: Create .ssh directory structure
+  file:
+    path: '{{ item.path }}'
+    state: directory
+    mode: 0700
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+  with_items:
+    - {path: /home/user-1/.ssh, owner: user-1, group: user-1}
+    - {path: /home/user-2/.ssh, owner: user-2, group: user-2}
+
+- name: Install the SSH public key on managed host for all users
+  authorized_key:
+    user: '{{ item.user }}'
+    state: present
+    key: '{{ item.key }}'
+    manage_dir: yes
+  with_items:
+    - {user: user-1 , key: "{{ lookup('file' , 'files/user-1.pub') }}"}
+    - {user: user-2 , key: "{{ lookup('file' , 'files/user-2.pub') }}"}
